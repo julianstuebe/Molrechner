@@ -382,6 +382,7 @@ function initUI() {
   const examplesEl = document.getElementById("examples");
   let parts = [];
   let pretty = null;
+  let segs = [];
   for (const [z, sym, name, m] of ELEMENTS) {
     const p = pos(z);
     const tile = document.createElement("div");
@@ -401,16 +402,26 @@ function initUI() {
     b.addEventListener("click", () => { inputEl.value = formula; applyFormula(); });
     examplesEl.appendChild(b);
   }
+  function segDisp(s) {
+    if (s.count <= 1) return s.disp;
+    return s.count + (s.disp.includes("·") ? "(" + s.disp + ")" : s.disp);
+  }
   function addBlock(label, formula) {
-    const base = pretty || parts.map(p => BY_Z[p.z].sym + sub(p.n)).join("");
     const blockTree = parseFormula(formula);
+    const disp = treeToString(blockTree);
+    if (pretty === null) {
+      const flat = parts.map(p => BY_Z[p.z].sym + sub(p.n)).join("");
+      segs = flat ? [{ disp: flat, count: 1 }] : [];
+    }
+    const last = segs[segs.length - 1];
+    if (last && last.disp === disp) last.count++;
+    else segs.push({ disp, count: 1 });
+    pretty = segs.map(segDisp).join("·");
     for (const bp of flattenToParts(blockTree)) {
       const ex = parts.find(p => p.z === bp.z);
       if (ex) ex.n += bp.n;
       else parts.push({ z: bp.z, n: bp.n });
     }
-    const disp = treeToString(blockTree);
-    pretty = base ? base + "·" + disp : disp;
     errEl.textContent = "";
     render(true);
   }
@@ -459,6 +470,7 @@ function initUI() {
     if (last && last.z === z) last.n++;
     else parts.push({ z, n: 1 });
     pretty = null;
+    segs = [];
     errEl.textContent = "";
     render(true);
   }
@@ -467,6 +479,7 @@ function initUI() {
       const tree = parseFormula(inputEl.value);
       parts = flattenToParts(tree);
       pretty = treeToString(tree);
+      segs = [{ disp: pretty, count: 1 }];
       errEl.textContent = "";
       render(true);
     } catch (e) {
@@ -484,6 +497,7 @@ function initUI() {
       if (isNaN(v) || v < 1) v = 1;
       parts[idx].n = v;
       pretty = null;
+      segs = [];
       render(false);
     }
   });
@@ -494,17 +508,20 @@ function initUI() {
     if (e.target.matches(".rm")) {
       parts.splice(+e.target.dataset.idx, 1);
       pretty = null;
+      segs = [];
       render(true);
     }
   });
   document.getElementById("back").addEventListener("click", () => {
     parts.pop();
     pretty = null;
+    segs = [];
     render(true);
   });
   document.getElementById("clear").addEventListener("click", () => {
     parts = [];
     pretty = null;
+    segs = [];
     render(true);
   });
   document.getElementById("apply").addEventListener("click", applyFormula);
