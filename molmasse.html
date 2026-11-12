@@ -131,7 +131,7 @@
 <body>
 <header>
   <h1>Periodensystem &amp; Molmassen-Rechner</h1>
-  <p>Element anklicken, um es hinzuzufügen (erneuter Klick erhöht die Anzahl) – oder Formel eingeben, z.&nbsp;B. <code>Ca(OH)2</code>.</p>
+  <p>Element anklicken, um es hinzuzufügen (erneuter Klick erhöht die Anzahl) – oder Formel eingeben, z.&nbsp;B. <code>Ca(OH)2</code> oder <code>3CaO·SiO2</code>. Für die Zementmineralogie stehen Oxide und Klinkerphasen als Bausteine bereit.</p>
 </header>
 <main>
   <section class="table-wrap">
@@ -160,12 +160,16 @@
       <button id="clear" type="button">Leeren</button>
     </div>
     <div class="row formula-input">
-      <input id="formulaInput" type="text" placeholder="Formel, z. B. Ca(OH)2" autocomplete="off">
+      <input id="formulaInput" type="text" placeholder="Formel, z. B. Ca(OH)2 oder 3CaO·SiO2" autocomplete="off">
       <button id="apply" type="button">Übernehmen</button>
     </div>
     <div id="error" class="error"></div>
     <h3>Beispiele</h3>
     <div id="examples" class="examples"></div>
+    <h3>Oxide-Bausteine (Zementmineralogie)</h3>
+    <div id="oxideBlocks" class="examples"></div>
+    <h3>Klinkerphasen &amp; Mineralien</h3>
+    <div id="mineralBlocks" class="examples"></div>
   </aside>
 </main>
 <script>
@@ -219,6 +223,14 @@ for (const [z, sym, name, m] of ELEMENTS) {
   BY_Z[z] = { z, sym, name, m };
   BY_SYM[sym] = { z, sym, name, m };
 }
+const OXIDE_BLOCKS = [
+  ["CaO","CaO"],["MgO","MgO"],["SiO₂","SiO2"],["Al₂O₃","Al2O3"],["Fe₂O₃","Fe2O3"],
+  ["SO₃","SO3"],["K₂O","K2O"],["Na₂O","Na2O"],["TiO₂","TiO2"],["MnO","MnO"],["P₂O₅","P2O5"]
+];
+const MINERAL_BLOCKS = [
+  ["C₃S (Alit)","3CaO·SiO2"],["C₂S (Belit)","2CaO·SiO2"],["C₃A","3CaO·Al2O3"],
+  ["C₄AF","4CaO·Al2O3·Fe2O3"],["Gips","CaSO4·2H2O"],["Kalkstein","CaCO3"]
+];
 function fmt(n) {
   return n.toLocaleString("de-DE", { maximumFractionDigits: 4 });
 }
@@ -278,6 +290,29 @@ function parseFormula(input) {
         const n = m[0] ? parseInt(m[0], 10) : 1;
         i += m[0].length;
         nodes.push({ group: inner, n });
+      } else if (c === "·" || c === "•") {
+        i++;
+        nodes.push({ dot: true });
+      } else if (/\d/.test(c)) {
+        const pm = /^\d+/.exec(s.slice(i));
+        const pre = parseInt(pm[0], 10);
+        i += pm[0].length;
+        const sub = [];
+        while (i < s.length && !")·•(".includes(s[i])) {
+          const c2 = s[i];
+          if (!/[A-Z]/.test(c2)) throw new Error("Ungültiges Zeichen „" + c2 + "“.");
+          let sym = c2;
+          i++;
+          while (i < s.length && /[a-z]/.test(s[i])) { sym += s[i]; i++; }
+          const el = BY_SYM[sym];
+          if (!el) throw new Error("Unbekanntes Element „" + sym + "“.");
+          const m = /^\d*/.exec(s.slice(i));
+          const n = m[0] ? parseInt(m[0], 10) : 1;
+          i += m[0].length;
+          sub.push({ z: el.z, n });
+        }
+        if (!sub.length) throw new Error("Ungültiges Zeichen „" + c + "“.");
+        nodes.push({ coef: pre, group: sub });
       } else if (/[A-Z]/.test(c)) {
         let sym = c;
         i++;
@@ -303,7 +338,9 @@ function flatten(nodes, mult, out) {
   out = out || new Map();
   mult = mult || 1;
   for (const nd of nodes) {
+    if (nd.dot) continue;
     if (nd.z) out.set(nd.z, (out.get(nd.z) || 0) + nd.n * mult);
+    else if (nd.coef) flatten(nd.group, nd.coef * mult, out);
     else flatten(nd.group, nd.n * mult, out);
   }
   return out;
@@ -313,9 +350,11 @@ function flattenToParts(tree) {
   return [...map.entries()].map(([z, n]) => ({ z, n }));
 }
 function treeToString(nodes) {
-  return nodes.map(nd => nd.z
+  return nodes.map(nd => nd.dot ? "·" : nd.z
     ? BY_Z[nd.z].sym + sub(nd.n)
-    : "(" + treeToString(nd.group) + ")" + sub(nd.n)
+    : nd.coef
+      ? (nd.coef > 1 ? nd.coef : "") + nd.group.map(g => treeToString([g])).join("")
+      : "(" + treeToString(nd.group) + ")" + sub(nd.n)
   ).join("");
 }
 function massOfParts(parts) {
@@ -327,7 +366,7 @@ function massOfTree(tree) {
   return massOfParts(flattenToParts(tree));
 }
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { ELEMENTS, BY_Z, BY_SYM, SYNTH, fmt, sub, pos, category, parseFormula, flatten, flattenToParts, treeToString, massOfParts, massOfTree };
+  module.exports = { ELEMENTS, BY_Z, BY_SYM, SYNTH, fmt, sub, pos, category, parseFormula, flatten, flattenToParts, treeToString, massOfParts, massOfTree, OXIDE_BLOCKS, MINERAL_BLOCKS };
 }
 if (typeof document !== "undefined") {
   document.addEventListener("DOMContentLoaded", initUI);
@@ -362,6 +401,31 @@ function initUI() {
     b.addEventListener("click", () => { inputEl.value = formula; applyFormula(); });
     examplesEl.appendChild(b);
   }
+  function addBlock(label, formula) {
+    const base = pretty || parts.map(p => BY_Z[p.z].sym + sub(p.n)).join("");
+    const blockTree = parseFormula(formula);
+    for (const bp of flattenToParts(blockTree)) {
+      const ex = parts.find(p => p.z === bp.z);
+      if (ex) ex.n += bp.n;
+      else parts.push({ z: bp.z, n: bp.n });
+    }
+    const disp = treeToString(blockTree);
+    pretty = base ? base + "·" + disp : disp;
+    errEl.textContent = "";
+    render(true);
+  }
+  function fillBlocks(el, blocks) {
+    for (const [label, formula] of blocks) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      b.title = formula + " – klicken zum Hinzufügen";
+      b.addEventListener("click", () => addBlock(label, formula));
+      el.appendChild(b);
+    }
+  }
+  fillBlocks(document.getElementById("oxideBlocks"), OXIDE_BLOCKS);
+  fillBlocks(document.getElementById("mineralBlocks"), MINERAL_BLOCKS);
   function formulaText() {
     if (pretty) return pretty;
     if (!parts.length) return "–";
